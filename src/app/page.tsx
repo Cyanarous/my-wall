@@ -108,7 +108,7 @@ export default function Home() {
 
   const uploadImage = async (file: File): Promise<string> => {
     const fileName = `${Date.now()}-${file.name}`;
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('wall-images')
       .upload(fileName, file);
 
@@ -261,10 +261,12 @@ export default function Home() {
                 {/* Image Preview */}
                 {imagePreview && (
                   <div className="relative mt-2 inline-block">
-                    <img 
-                      src={imagePreview} 
+                    <Image 
+                      src={imagePreview}
                       alt="Preview" 
-                      className="max-h-48 rounded-lg"
+                      width={400}
+                      height={300}
+                      className="max-h-48 rounded-lg object-contain"
                     />
                     <button
                       onClick={handleRemoveImage}
@@ -324,10 +326,12 @@ export default function Home() {
                     <p className="text-[15px] text-[#1C2B4B] mb-4">{post.body}</p>
                     {post.image_url && (
                       <div className="mt-2">
-                        <img 
-                          src={post.image_url} 
-                          alt="Post image" 
-                          className="rounded-lg max-h-96 w-auto"
+                        <Image 
+                          src={post.image_url}
+                          alt="Post image"
+                          width={800}
+                          height={600}
+                          className="rounded-lg max-h-96 w-auto object-contain"
                         />
                       </div>
                     )}
