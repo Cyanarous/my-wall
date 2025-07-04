@@ -2,24 +2,29 @@
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface Post {
-  id: string;  // UUID
+  id: string;
   user_id: string | null;
   body: string;
   created_at: string;
+  image_url: string | null;
 }
 
 const CHAR_LIMIT = 280;
 const AUTHOR_NAME = "Gabriel Carlos";
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [charsRemaining, setCharsRemaining] = useState(CHAR_LIMIT);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Initial fetch
@@ -71,24 +76,68 @@ export default function Home() {
     }
   };
 
-  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value;
-    if (text.length <= CHAR_LIMIT) {
-      setNewMessage(text);
-      setCharsRemaining(CHAR_LIMIT - text.length);
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File size must be less than 5MB');
+      return;
     }
+
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are allowed');
+      return;
+    }
+
+    setSelectedImage(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const fileName = `${Date.now()}-${file.name}`;
+    const { data, error } = await supabase.storage
+      .from('wall-images')
+      .upload(fileName, file);
+
+    if (error) {
+      throw error;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('wall-images')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
   };
 
   const handleShare = async () => {
     if (newMessage.trim() && newMessage.length <= CHAR_LIMIT && !isLoading) {
       setIsLoading(true);
       try {
-        console.log('Inserting new post...');
+        let imageUrl = null;
+        if (selectedImage) {
+          imageUrl = await uploadImage(selectedImage);
+        }
+
         const { data, error } = await supabase
           .from('posts')
           .insert([
             {
               body: newMessage.trim(),
+              image_url: imageUrl,
             }
           ])
           .select()
@@ -107,11 +156,25 @@ export default function Home() {
 
         setNewMessage("");
         setCharsRemaining(CHAR_LIMIT);
+        setSelectedImage(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       } catch (error) {
         console.error('Error creating post:', error);
+        alert('Failed to create post. Please try again.');
       } finally {
         setIsLoading(false);
       }
+    }
+  };
+
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    if (text.length <= CHAR_LIMIT) {
+      setNewMessage(text);
+      setCharsRemaining(CHAR_LIMIT - text.length);
     }
   };
 
@@ -194,8 +257,41 @@ export default function Home() {
                   onChange={handleMessageChange}
                   className="w-full min-h-[120px] p-3 text-[15px] text-gray-700 placeholder-gray-500 bg-[#F0F2F5] border-0 rounded-lg resize-none focus:outline-none focus:ring-0"
                 />
+                
+                {/* Image Preview */}
+                {imagePreview && (
+                  <div className="relative mt-2 inline-block">
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="max-h-48 rounded-lg"
+                    />
+                    <button
+                      onClick={handleRemoveImage}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center mt-3 text-sm">
-                  <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                      ref={fileInputRef}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-[#4267B2] hover:underline"
+                    >
+                      Add Photo
+                    </button>
+                  </div>
                   <button 
                     onClick={handleShare}
                     disabled={!newMessage.trim() || newMessage.length > CHAR_LIMIT || isLoading}
@@ -225,7 +321,16 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                    <p className="text-[15px] text-[#1C2B4B]">{post.body}</p>
+                    <p className="text-[15px] text-[#1C2B4B] mb-4">{post.body}</p>
+                    {post.image_url && (
+                      <div className="mt-2">
+                        <img 
+                          src={post.image_url} 
+                          alt="Post image" 
+                          className="rounded-lg max-h-96 w-auto"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

@@ -7,4 +7,7 @@ create table posts (
 );
 
 -- Enable realtime for the posts table
-alter table posts replica identity full; 
+alter table posts replica identity full;
+
+-- Add image_url column to posts table
+alter table posts add column image_url text; 
