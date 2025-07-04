@@ -3,12 +3,13 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface Post {
-  id: number;
-  author: string;
-  content: string;
-  timestamp: number;
+  id: string;  // UUID
+  user_id: string | null;
+  body: string;
+  created_at: string;
 }
 
 const CHAR_LIMIT = 280;
@@ -18,19 +19,47 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [charsRemaining, setCharsRemaining] = useState(CHAR_LIMIT);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Load posts from localStorage on initial render
+  // Load posts from Supabase on initial render
   useEffect(() => {
-    const savedPosts = localStorage.getItem("wall-posts");
-    if (savedPosts) {
-      setPosts(JSON.parse(savedPosts));
-    }
+    fetchPosts();
+    // Subscribe to new posts
+    const channel = supabase
+      .channel('posts')
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'posts' 
+        }, 
+        (payload) => {
+          setPosts(current => [payload.new as Post, ...current]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // Save posts to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem("wall-posts", JSON.stringify(posts));
-  }, [posts]);
+  const fetchPosts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setPosts(data || []);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+    }
+  };
 
   const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -40,23 +69,37 @@ export default function Home() {
     }
   };
 
-  const handleShare = () => {
-    if (newMessage.trim() && newMessage.length <= CHAR_LIMIT) {
-      const newPost: Post = {
-        id: Date.now(),
-        author: AUTHOR_NAME,
-        content: newMessage.trim(),
-        timestamp: Date.now(),
-      };
-      setPosts([newPost, ...posts]); // Add new post at the beginning
-      setNewMessage("");
-      setCharsRemaining(CHAR_LIMIT);
+  const handleShare = async () => {
+    if (newMessage.trim() && newMessage.length <= CHAR_LIMIT && !isLoading) {
+      setIsLoading(true);
+      try {
+        const { error } = await supabase
+          .from('posts')
+          .insert([
+            {
+              body: newMessage.trim(),
+              // user_id will be null for now, we'll add authentication later
+            }
+          ]);
+
+        if (error) {
+          throw error;
+        }
+
+        setNewMessage("");
+        setCharsRemaining(CHAR_LIMIT);
+      } catch (error) {
+        console.error('Error creating post:', error);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
-  const formatTimestamp = (timestamp: number) => {
-    const now = Date.now();
-    const diff = now - timestamp;
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
     
     // Less than a minute
     if (diff < 60000) {
@@ -73,7 +116,7 @@ export default function Home() {
       return `${hours}h ago`;
     }
     // Otherwise show date
-    return new Date(timestamp).toLocaleDateString();
+    return date.toLocaleDateString();
   };
 
   return (
@@ -136,10 +179,10 @@ export default function Home() {
                   <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
                   <button 
                     onClick={handleShare}
-                    disabled={!newMessage.trim() || newMessage.length > CHAR_LIMIT}
+                    disabled={!newMessage.trim() || newMessage.length > CHAR_LIMIT || isLoading}
                     className="px-8 py-2 bg-[#4267B2] text-white font-medium rounded hover:bg-[#365899] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Share
+                    {isLoading ? 'Sharing...' : 'Share'}
                   </button>
                 </div>
               </div>
@@ -154,16 +197,16 @@ export default function Home() {
                       <div className="flex items-center">
                         <Avatar className="h-8 w-8">
                           <AvatarFallback className="bg-[#4267B2] text-white">
-                            {post.author.slice(0, 1)}
+                            {AUTHOR_NAME.slice(0, 1)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="ml-3">
-                          <p className="font-semibold text-[#1C2B4B]">{post.author}</p>
-                          <p className="text-[13px] text-[#65676B]">{formatTimestamp(post.timestamp)}</p>
+                          <p className="font-semibold text-[#1C2B4B]">{AUTHOR_NAME}</p>
+                          <p className="text-[13px] text-[#65676B]">{formatTimestamp(post.created_at)}</p>
                         </div>
                       </div>
                     </div>
-                    <p className="text-[15px] text-[#1C2B4B]">{post.content}</p>
+                    <p className="text-[15px] text-[#1C2B4B]">{post.body}</p>
                   </div>
                 </div>
               ))}
