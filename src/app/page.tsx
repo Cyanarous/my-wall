@@ -21,30 +21,39 @@ export default function Home() {
   const [charsRemaining, setCharsRemaining] = useState(CHAR_LIMIT);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load posts from Supabase on initial render
   useEffect(() => {
+    // Initial fetch
     fetchPosts();
-    // Subscribe to new posts
+
+    // Set up real-time subscription
     const channel = supabase
-      .channel('posts')
-      .on('postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'posts' 
-        }, 
-        (payload) => {
-          setPosts(current => [payload.new as Post, ...current]);
+      .channel('public:posts')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'posts',
+        },
+        async (payload) => {
+          console.log('Real-time change received:', payload);
+          // Fetch all posts again to ensure we have the latest data
+          await fetchPosts();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Supabase real-time subscription status:', status);
+      });
 
+    // Cleanup subscription
     return () => {
-      supabase.removeChannel(channel);
+      console.log('Cleaning up subscription');
+      channel.unsubscribe();
     };
   }, []);
 
   const fetchPosts = async () => {
+    console.log('Fetching posts...');
     try {
       const { data, error } = await supabase
         .from('posts')
@@ -55,6 +64,7 @@ export default function Home() {
         throw error;
       }
 
+      console.log('Fetched posts:', data);
       setPosts(data || []);
     } catch (error) {
       console.error('Error fetching posts:', error);
@@ -73,17 +83,26 @@ export default function Home() {
     if (newMessage.trim() && newMessage.length <= CHAR_LIMIT && !isLoading) {
       setIsLoading(true);
       try {
-        const { error } = await supabase
+        console.log('Inserting new post...');
+        const { data, error } = await supabase
           .from('posts')
           .insert([
             {
               body: newMessage.trim(),
-              // user_id will be null for now, we'll add authentication later
             }
-          ]);
+          ])
+          .select()
+          .single();
 
         if (error) {
           throw error;
+        }
+
+        console.log('New post inserted:', data);
+        
+        // Optimistically update the UI
+        if (data) {
+          setPosts((currentPosts) => [data, ...currentPosts]);
         }
 
         setNewMessage("");
