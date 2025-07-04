@@ -1,40 +1,81 @@
+"use client";
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Image from "next/image";
+import { useState, useEffect } from "react";
 
-const posts = [
-  {
-    id: 1,
-    author: "Anna",
-    content: "Hey Gab, did you debug your coffee maker yet? Last cup tasted like JavaScript errors.",
-  },
-  {
-    id: 2,
-    author: "Adelaida",
-    content: "Gab, saw your last coding session—pretty sure you broke Stack Overflow again! 🚨",
-  },
-  {
-    id: 3,
-    author: "Juho",
-    content: "Gab, are you still coding in pajamas, or have you upgraded to full-time sweatpants mode?",
-  },
-  {
-    id: 4,
-    author: "Maija",
-    content: "Gab, rumor has it your computer has more stickers than code running on it. Confirm?",
-  },
-  {
-    id: 5,
-    author: "Alex",
-    content: "Yo Gab, just pulled an all-nighter on the assignment. Turns out sleep deprivation doesn't improve coding skills. Weird!",
-  },
-  {
-    id: 6,
-    author: "Sheryl",
-    content: "Gab, when are we gonna deploy your latest dance moves to production? #AgileDancer",
-  },
-];
+interface Post {
+  id: number;
+  author: string;
+  content: string;
+  timestamp: number;
+}
+
+const CHAR_LIMIT = 280;
+const AUTHOR_NAME = "Gabriel Carlos";
 
 export default function Home() {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [charsRemaining, setCharsRemaining] = useState(CHAR_LIMIT);
+
+  // Load posts from localStorage on initial render
+  useEffect(() => {
+    const savedPosts = localStorage.getItem("wall-posts");
+    if (savedPosts) {
+      setPosts(JSON.parse(savedPosts));
+    }
+  }, []);
+
+  // Save posts to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("wall-posts", JSON.stringify(posts));
+  }, [posts]);
+
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    if (text.length <= CHAR_LIMIT) {
+      setNewMessage(text);
+      setCharsRemaining(CHAR_LIMIT - text.length);
+    }
+  };
+
+  const handleShare = () => {
+    if (newMessage.trim() && newMessage.length <= CHAR_LIMIT) {
+      const newPost: Post = {
+        id: Date.now(),
+        author: AUTHOR_NAME,
+        content: newMessage.trim(),
+        timestamp: Date.now(),
+      };
+      setPosts([newPost, ...posts]); // Add new post at the beginning
+      setNewMessage("");
+      setCharsRemaining(CHAR_LIMIT);
+    }
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    // Less than a minute
+    if (diff < 60000) {
+      return "just now";
+    }
+    // Less than an hour
+    if (diff < 3600000) {
+      const minutes = Math.floor(diff / 60000);
+      return `${minutes}m ago`;
+    }
+    // Less than a day
+    if (diff < 86400000) {
+      const hours = Math.floor(diff / 3600000);
+      return `${hours}h ago`;
+    }
+    // Otherwise show date
+    return new Date(timestamp).toLocaleDateString();
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F0F2F5]">
       <header className="bg-[#4267B2] text-white fixed top-0 left-0 right-0 z-10 shadow-md h-14">
@@ -55,7 +96,7 @@ export default function Home() {
                 height={192}
                 className="w-48 h-48 aspect-square object-cover mb-4 mx-auto rounded-lg"
               />
-              <h2 className="text-2xl font-bold text-[#1C2B4B]">Gabriel Carlos</h2>
+              <h2 className="text-2xl font-bold text-[#1C2B4B]">{AUTHOR_NAME}</h2>
               <p className="text-[#65676B] mb-8">wall</p>
 
               <div className="space-y-6">
@@ -87,11 +128,17 @@ export default function Home() {
               <div className="p-4">
                 <textarea 
                   placeholder="What's on your mind?"
+                  value={newMessage}
+                  onChange={handleMessageChange}
                   className="w-full min-h-[120px] p-3 text-[15px] text-gray-700 placeholder-gray-500 bg-[#F0F2F5] border-0 rounded-lg resize-none focus:outline-none focus:ring-0"
                 />
                 <div className="flex justify-between items-center mt-3 text-sm">
-                  <span className="text-[#65676B]">280 characters remaining</span>
-                  <button className="px-8 py-2 bg-[#4267B2] text-white font-medium rounded hover:bg-[#365899] transition-colors">
+                  <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
+                  <button 
+                    onClick={handleShare}
+                    disabled={!newMessage.trim() || newMessage.length > CHAR_LIMIT}
+                    className="px-8 py-2 bg-[#4267B2] text-white font-medium rounded hover:bg-[#365899] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     Share
                   </button>
                 </div>
@@ -112,7 +159,7 @@ export default function Home() {
                         </Avatar>
                         <div className="ml-3">
                           <p className="font-semibold text-[#1C2B4B]">{post.author}</p>
-                          <p className="text-[13px] text-[#65676B]">now</p>
+                          <p className="text-[13px] text-[#65676B]">{formatTimestamp(post.timestamp)}</p>
                         </div>
                       </div>
                     </div>
