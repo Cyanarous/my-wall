@@ -87,17 +87,38 @@ export default function Home() {
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropZone = e.currentTarget;
+    dropZone.classList.add('bg-blue-50', 'border-blue-500');
+  };
 
-    // Validate file type
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropZone = e.currentTarget;
+    dropZone.classList.remove('bg-blue-50', 'border-blue-500');
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropZone = e.currentTarget;
+    dropZone.classList.remove('bg-blue-50', 'border-blue-500');
+
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const handleFileSelect = (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Only image files are allowed');
       return;
     }
 
-    // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       alert('File size must be less than 5MB');
       return;
@@ -339,8 +360,34 @@ export default function Home() {
                   className="w-full min-h-[120px] p-3 text-[15px] text-gray-700 placeholder-gray-500 bg-[#F0F2F5] border-0 rounded-lg resize-none focus:outline-none focus:ring-0"
                 />
                 
-                {/* Image Preview */}
-                {imagePreview && (
+                {/* Image Upload Area */}
+                {!imagePreview ? (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="mt-3 border-2 border-dashed border-gray-300 rounded-lg p-6 transition-colors duration-200 ease-in-out cursor-pointer hover:border-blue-500 hover:bg-blue-50"
+                  >
+                    <div className="flex flex-col items-center">
+                      <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      <p className="text-sm text-gray-600">Drag and drop an image here, or click to select</p>
+                      <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 5MB</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileSelect(file);
+                      }}
+                      className="hidden"
+                      ref={fileInputRef}
+                    />
+                  </div>
+                ) : (
                   <div className="relative mt-2 inline-block">
                     <Image 
                       src={imagePreview}
@@ -359,22 +406,7 @@ export default function Home() {
                 )}
 
                 <div className="flex justify-between items-center mt-3 text-sm">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                      ref={fileInputRef}
-                    />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-[#4267B2] hover:underline"
-                    >
-                      Add Photo
-                    </button>
-                  </div>
+                  <span className="text-[#65676B]">{charsRemaining} characters remaining</span>
                   <button 
                     onClick={handleShare}
                     disabled={!newMessage.trim() || newMessage.length > CHAR_LIMIT || isLoading}
