@@ -66,13 +66,24 @@ export default function Home() {
         .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Error fetching posts:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         throw error;
       }
 
-      console.log('Fetched posts:', data);
+      console.log('Successfully fetched posts:', data);
       setPosts(data || []);
     } catch (error) {
-      console.error('Error fetching posts:', error);
+      console.error('Error in fetchPosts:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        name: error instanceof Error ? error.name : 'Unknown name',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
     }
   };
 
@@ -80,13 +91,15 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      alert('File size must be less than 5MB');
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are allowed');
       return;
     }
 
-    if (!file.type.startsWith('image/')) {
-      alert('Only image files are allowed');
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File size must be less than 5MB');
       return;
     }
 
@@ -107,20 +120,62 @@ export default function Home() {
   };
 
   const uploadImage = async (file: File): Promise<string> => {
-    const fileName = `${Date.now()}-${file.name}`;
-    const { error } = await supabase.storage
-      .from('wall-images')
-      .upload(fileName, file);
+    try {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Only image files are allowed');
+      }
 
-    if (error) {
+      // Validate file size (5MB)
+      if (file.size > MAX_FILE_SIZE) {
+        throw new Error('File size must be less than 5MB');
+      }
+
+      const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
+      console.log('Attempting to upload file:', {
+        name: fileName,
+        type: file.type,
+        size: file.size
+      });
+
+      // Create form data for the file
+      const { error: uploadError } = await supabase.storage
+        .from('wall-images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          contentType: file.type,
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Storage upload error:', {
+          message: uploadError.message,
+          name: uploadError.name,
+          details: uploadError
+        });
+        throw uploadError;
+      }
+
+      console.log('File uploaded successfully, getting public URL');
+      
+      const { data } = supabase.storage
+        .from('wall-images')
+        .getPublicUrl(fileName);
+
+      if (!data.publicUrl) {
+        throw new Error('Failed to get public URL for uploaded file');
+      }
+
+      console.log('Generated public URL:', data.publicUrl);
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error in uploadImage:', {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        name: error instanceof Error ? error.name : 'Unknown name'
+      });
       throw error;
     }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('wall-images')
-      .getPublicUrl(fileName);
-
-    return publicUrl;
   };
 
   const handleShare = async () => {
@@ -129,21 +184,36 @@ export default function Home() {
       try {
         let imageUrl = null;
         if (selectedImage) {
+          console.log('Starting image upload process for file:', {
+            name: selectedImage.name,
+            size: selectedImage.size,
+            type: selectedImage.type
+          });
           imageUrl = await uploadImage(selectedImage);
+          console.log('Image uploaded successfully:', imageUrl);
         }
+
+        const newPost = {
+          body: newMessage.trim(),
+          image_url: imageUrl,
+          user_id: null // Since we're not implementing auth yet
+        };
+
+        console.log('Attempting to create post:', newPost);
 
         const { data, error } = await supabase
           .from('posts')
-          .insert([
-            {
-              body: newMessage.trim(),
-              image_url: imageUrl,
-            }
-          ])
+          .insert([newPost])
           .select()
           .single();
 
         if (error) {
+          console.error('Database insert error:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          });
           throw error;
         }
 
@@ -154,6 +224,7 @@ export default function Home() {
           setPosts((currentPosts) => [data, ...currentPosts]);
         }
 
+        // Reset form
         setNewMessage("");
         setCharsRemaining(CHAR_LIMIT);
         setSelectedImage(null);
@@ -162,8 +233,18 @@ export default function Home() {
           fileInputRef.current.value = '';
         }
       } catch (error) {
-        console.error('Error creating post:', error);
-        alert('Failed to create post. Please try again.');
+        console.error('Error creating post:', {
+          error,
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : 'No stack trace'
+        });
+        
+        // More descriptive error message
+        if (error instanceof Error) {
+          alert(`Failed to create post: ${error.message}`);
+        } else {
+          alert('Failed to create post. Please check the console for more details.');
+        }
       } finally {
         setIsLoading(false);
       }
